@@ -19,39 +19,59 @@ router.get("/update-sheet", async (req, res) => {
   const authClient = new auth.generateAuth();
   const drive = google.drive({ version: "v3", auth: authClient });
   const sheets = google.sheets({ version: "v4", auth: authClient });
+  const mimeType = "pplication/vnd.google-apps.spreadsheet";
+  const fileName = "test";
 
   // Get the ID of the Excel sheet you
   try {
     // Get the ID of the Excel sheet you want to update from the Google Drive API
     const fileResponse = await drive.files.list({
-      q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name='Your Excel Sheet Name'",
+      q: `mimeType='${mimeType}' and trashed=false and name='${fileName}'`,
       fields: "nextPageToken, files(id, name)",
       spaces: "drive",
     });
-    const fileId = fileResponse.data.files[0].id;
 
     // Update the Excel sheet using the Google Sheets API
-    const sheetRange = "Sheet1!A1:B2";
-    const sheetValues = [
-      ["Name", "Age"],
-      ["John", 30],
-      ["Jane", 25],
-    ];
-    const updateRequest = {
-      range: sheetRange,
-      values: sheetValues,
-      includeValuesInResponse: true,
-      responseValueRenderOption: "FORMATTED_VALUE",
-      responseDateTimeRenderOption: "SERIAL_NUMBER",
+    const sheetRange = "Sheet1";
+    const resource = {
+      values: [
+        ["Name", "Age"],
+        ["John", "30"],
+        ["Jane", "25"],
+      ],
     };
-    const updateResponse = sheets.spreadsheets.values.update({
-      spreadsheetId: fileId,
+
+    let fileId;
+    if (fileResponse.data.files?.length) {
+      fileId = fileResponse.data.files[0].id;
+    } else {
+      const createResponse = drive.files.create({
+        resource: {
+          name: fileName,
+          mimeType,
+        },
+        fields: "id",
+      });
+      fileId = createResponse.data.id;
+    }
+
+    const result = await sheets.spreadsheets.create({
+      resource: {
+        properties: {
+          title: "test",
+        },
+      },
+      fields: "spreadsheetId",
+    });
+    const updateResponse = await sheets.spreadsheets.values.update({
+      spreadsheetId: result.data.spreadsheetId,
       range: sheetRange,
       valueInputOption: "USER_ENTERED",
-      requestBody: updateRequest,
+      resource,
     });
-    const updatedValues = updateResponse.data.updatedData.values;
-    res.send(`Updated ${updatedValues.length} rows in the Excel sheet.`);
+    console.log({ updateResponseData: updateResponse.data });
+    const updatedValues = updateResponse.data.updatedCells;
+    res.send(`Updated ${updatedValues} cells in the Excel sheet.`);
   } catch (error) {
     console.error(error);
     res.send("Error updating Excel sheet.");
