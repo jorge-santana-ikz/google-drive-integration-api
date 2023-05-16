@@ -4,18 +4,7 @@ const auth = require("./auth");
 
 const router = express.Router();
 
-router.get("/auth", (req, res) => {
-  const authUrl = auth.getAuthUrl();
-  res.redirect(authUrl);
-});
-
-router.get("/oauth2callback", async (req, res) => {
-  const { code } = req.query;
-  const token = await auth.getAccessToken(code);
-  res.redirect("/update-sheet?access_token=" + token.access_token);
-});
-
-router.get("/update-sheet", async (req, res) => {
+router.get("/update-sheet", async (_req, res) => {
   const authClient = new auth.generateAuth();
   const drive = google.drive({ version: "v3", auth: authClient });
   const sheets = google.sheets({ version: "v4", auth: authClient });
