@@ -20,7 +20,7 @@ router.get("/update-sheet", async (req, res) => {
   const drive = google.drive({ version: "v3", auth: authClient });
   const sheets = google.sheets({ version: "v4", auth: authClient });
   const mimeType = "application/vnd.google-apps.spreadsheet";
-  const fileName = "test3";
+  const fileName = "test4";
 
   // Get the ID of the Excel sheet you
   try {
@@ -56,15 +56,23 @@ router.get("/update-sheet", async (req, res) => {
         fields: "spreadsheetId",
       });
       fileId = spreadsheetId;
-      await drive.permissions.create({
-        resource: {
-          type: "user",
-          role: "writer",
-          emailAddress: process.env.OWNER_EMAIL,
-        },
-        fields: "id",
-        fileId,
-      });
+      await Promise.all([
+        drive.permissions.create({
+          resource: {
+            type: "anyone",
+            role: "reader",
+          },
+          fileId,
+        }),
+        drive.permissions.create({
+          resource: {
+            type: "user",
+            role: "writer",
+            emailAddress: process.env.OWNER_EMAIL,
+          },
+          fileId,
+        }),
+      ]);
     }
     const updateResponse = await sheets.spreadsheets.values.append({
       spreadsheetId: fileId,
