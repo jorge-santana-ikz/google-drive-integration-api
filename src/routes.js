@@ -27,7 +27,6 @@ router.get("/update-sheet", async (req, res) => {
     // Get the ID of the Excel sheet you want to update from the Google Drive API
     const fileResponse = await drive.files.list({
       q: `mimeType='${mimeType}' and trashed=false and name='${fileName}'`,
-      // fields: "nextPageToken, files(id, name)",
       spaces: "drive",
     });
 
@@ -42,8 +41,24 @@ router.get("/update-sheet", async (req, res) => {
     };
 
     let fileId;
+    let permissionList;
     if (fileResponse.data.files?.length) {
       fileId = fileResponse.data.files[0].id;
+      const {
+        data: { permissions },
+      } = await drive.permissions.list({
+        fileId,
+        fields: "permissions(id, type, role, emailAddress, pendingOwner)",
+        supportsAllDrives: true,
+      });
+      permissionList = permissions;
+      if (
+        !permissions.some(
+          ({ type, emailAddress }) =>
+            type === "user" && emailAddress === process.env.OWNER_EMAIL
+        )
+      )
+        await drive.files.delete({ fileId });
     } else {
       const {
         data: { spreadsheetId },
@@ -56,7 +71,17 @@ router.get("/update-sheet", async (req, res) => {
         fields: "spreadsheetId",
       });
       fileId = spreadsheetId;
-      await Promise.all([
+      const [{ data }] = await Promise.all([
+        drive.permissions.create({
+          requestBody: {
+            type: "user",
+            role: "writer",
+            pendingOwner: true,
+            emailAddress: process.env.OWNER_EMAIL,
+          },
+          fields: "id, role, emailAddress, pendingOwner",
+          fileId,
+        }),
         drive.permissions.create({
           resource: {
             type: "anyone",
@@ -64,16 +89,29 @@ router.get("/update-sheet", async (req, res) => {
           },
           fileId,
         }),
-        drive.permissions.create({
-          resource: {
-            type: "user",
-            role: "writer",
-            emailAddress: process.env.OWNER_EMAIL,
-          },
-          fileId,
-        }),
       ]);
+      permissionList = [data];
     }
+    await Promise.all(
+      permissionList
+        .filter(
+          ({ emailAddress, role, pendingOwner }) =>
+            emailAddress === process.env.OWNER_EMAIL &&
+            role !== "owner" &&
+            !pendingOwner
+        )
+        .map(async ({ id: permissionId }) =>
+          drive.permissions.update({
+            fileId,
+            permissionId,
+            requestBody: {
+              role: "writer",
+              pendingOwner: true,
+            },
+          })
+        )
+    );
+
     const updateResponse = await sheets.spreadsheets.values.append({
       spreadsheetId: fileId,
       range: sheetRange,
